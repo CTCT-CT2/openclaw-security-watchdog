@@ -1,4 +1,4 @@
-# OpenClaw Security Watchdog / 安全巡检
+<h1 align="center">OpenClaw Security Watchdog</h1>
 
 <p align="center">
   <strong>🛡️ 一键系统安全扫描，通俗易懂的安全报告</strong><br>

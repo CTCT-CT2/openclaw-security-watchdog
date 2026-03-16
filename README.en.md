@@ -1,4 +1,4 @@
-# OpenClaw Security Watchdog
+<h1 align="center">OpenClaw Security Watchdog</h1>
 
 <p align="center">
 <strong>🛡️ One-click System Security Scan with Human-Friendly Reports</strong>
