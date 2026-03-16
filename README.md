@@ -105,3 +105,10 @@ openclaw 会引导你完成：
 | 仅本地 | 零网络流量，所有数据留在本机 |
 
 报告保存在：`~/.openclaw/security-reports/`
+
+## License
+
+Documentation in this repository is licensed under the Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License (CC BY-NC-SA 4.0).
+
+To view a copy of this license, visit:
+https://creativecommons.org/licenses/by-nc-sa/4.0/
