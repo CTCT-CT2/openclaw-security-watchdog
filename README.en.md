@@ -1,4 +1,4 @@
-# OpenClaw Security Audit
+# OpenClaw Security Watchdog
 
 <p align="center">
 <strong>🛡️ One-click System Security Scan with Human-Friendly Reports</strong>
@@ -15,7 +15,7 @@
 
 ### Project Introduction
 
-**OpenClaw Security Audit** is an OpenClaw Skill that performs a comprehensive, one-click system security scan covering 14 key security dimensions and generates easy-to-understand security reports.
+**OpenClaw Security Watchdog** is an OpenClaw Skill that performs a comprehensive, one-click system security scan covering 14 key security dimensions and generates easy-to-understand security reports.
 
 ### ✨ Features
 
@@ -55,7 +55,7 @@
 Simply say this in the OpenClaw chat:
 
 ```text
-Help me install the security audit skill from https://gitee.com/ctct-ct2/openclaw-security-watchdog
+Help me install the security watchdog skill from https://github.com/CTCT-CT2/openclaw-security-watchdog
 
 ```
 
@@ -65,10 +65,7 @@ It will automatically execute the command to complete the installation for you.
 
 ```bash
 # Clone locally
-git clone https://gitee.com/ctct-ct2/openclaw-security-watchdog.git
-
-# Add local Skill
-openclaw skill add ./openclaw-security-audit
+git clone https://github.com/CTCT-CT2/openclaw-security-watchdog.git
 
 ```
 
@@ -77,7 +74,7 @@ openclaw skill add ./openclaw-security-audit
 After installation, simply say in the OpenClaw session:
 
 ```text
-Execute security audit
+Execute security watchdog
 
 ```
 
@@ -88,16 +85,8 @@ Help me check system security
 
 ```
 
-It will automatically recognize and execute the Security Audit Skill.
+It will automatically recognize and execute the Security Watchdog Skill.
 
-Or:
-
-```text
-Security check
-Security audit
-System security scan
-
-```
 
 OpenClaw will guide you through:
 

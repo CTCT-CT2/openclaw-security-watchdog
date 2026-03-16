@@ -1,4 +1,4 @@
-# OpenClaw Security Audit / 安全巡检
+# OpenClaw Security Watchdog / 安全巡检
 
 <p align="center">
   <strong>🛡️ 一键系统安全扫描，通俗易懂的安全报告</strong><br>
@@ -51,7 +51,7 @@
 在 OpenClaw 对话框中直接说：
 
 ```
-帮我安装安全巡检 skill，地址是 https://gitee.com/ctct-ct2/openclaw-security-watchdog
+帮我安装安全巡检 skill，地址是 https://github.com/CTCT-CT2/openclaw-security-watchdog
 ```
 
 会自动帮你执行命令完成安装。
@@ -60,10 +60,7 @@
 
 ```bash
 # 克隆到本地
-git clone https://gitee.com/ctct-ct2/openclaw-security-watchdog.git
-
-# 添加本地 Skill
-openclaw skill add ./openclaw-security-audit
+git clone https://github.com/CTCT-CT2/openclaw-security-watchdog.git
 ```
 
 ### 🎯 使用
@@ -82,13 +79,6 @@ openclaw skill add ./openclaw-security-audit
 
 会自动识别并执行安全巡检 Skill。
 
-或：
-
-```
-安全检查
-security audit
-系统安全扫描
-```
 
 openclaw 会引导你完成：
 1. **选择检测模式** — 完整检测（推荐）或仅本地
