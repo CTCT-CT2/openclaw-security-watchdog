@@ -28,13 +28,15 @@ openclaw cron add \
   --cron "45 23 * * *" \
   --tz "Asia/Shanghai" \
   --session "isolated" \
-  --message "Execute this command and output the result as-is, no extra commentary: node <skill-path>/scripts/openclaw-hybrid-audit-changeway.js --push" \
+  --message "Run the security audit script: node <skill-path>/scripts/openclaw-hybrid-audit-changeway.js — then from the output extract and report ONLY these three items: (1) the line containing PASS/FAIL/SKIP counts, (2) the report file path from the line starting with '详细审计报告已保存至'. Do NOT include the full script output." \
   --announce \
   --channel <channel> \
   --to <your-chat-id> \
   --timeout-seconds 900 \
   --thinking off
 ```
+
+> ❌ **禁止在 cron 的 `--message` 中添加 `--push`**。`--push` 会向远端持续发送设备标识（MAC、主机名、agent_id）和 Skill 清单，不适合在未经每次人工确认的定时任务中使用。如需使用完整检测，请手动运行并在 SKILL.md 第三步选择并确认。
 
 ### 参数说明
 
@@ -51,10 +53,11 @@ openclaw cron add \
 
 ### 关于 --push 参数
 
-**推荐带 `--push`**，原因：
-1. 威胁情报每日更新，定时任务开启可及时发现新风险
-2. 云端基线对比能发现本地难以察觉的异常
-3. 仅上报组件清单，无敏感信息泄露风险
+❌ **cron 定时任务中严禁使用 `--push`**。
+
+`--push` 会向远端持续发送设备标识（MAC 地址、主机名、持久化 agent_id）和本机完整 Skill 清单，属于隐私敏感操作，必须每次由用户手动确认后才能执行。将 `--push` 写入 cron 会导致设备信息被长期自动上报，违背知情同意原则。
+
+如需使用完整检测（威胁情报查询），请**手动运行**安全巡检并在第三步选择并完成知情确认。
 
 
 ### ⚠️ 避坑指南
@@ -70,7 +73,7 @@ openclaw cron add \
 3. **message 不要写"发送给某人"**
    - isolated Agent 无法解析用户名
    - 推送由 `--announce` 框架处理
-   - 维持示例写法，但需关注`--push`参数设置
+   - 维持示例写法，cron 的 `--message` 中不得包含 `--push`
 
 4. **推送偶发失败**
    - Telegram 等平台偶发 502/503
@@ -109,7 +112,8 @@ cd <skill-path>
 # 本地模式（无网络）
 node scripts/openclaw-hybrid-audit-changeway.js
 
-# 完整模式（含威胁情报，推荐）
+# 完整模式（含威胁情报）— ⚠️ 仅限手动运行，不得写入 cron
+# 运行前须在 SKILL.md 第三步完成知情确认（回复"2 已了解"）
 node scripts/openclaw-hybrid-audit-changeway.js --push
 ```
 
@@ -129,7 +133,7 @@ openclaw cron add \
   --cron "45 23 * * *" \
   --tz "Asia/Shanghai" \
   --session "isolated" \
-  --message "Execute this command and output the result as-is, no extra commentary: node <skill-path>/scripts/openclaw-hybrid-audit-changeway.js --push" \
+  --message "Run the security audit script: node <skill-path>/scripts/openclaw-hybrid-audit-changeway.js — then from the output extract and report ONLY these three items: (1) the line containing PASS/FAIL/SKIP counts, (2) the report file path from the line starting with '详细审计报告已保存至'. Do NOT include the full script output." \
   --announce \
   --channel <channel> \
   --to <your-chat-id> \
