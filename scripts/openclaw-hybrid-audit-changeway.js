@@ -4,7 +4,11 @@
  * 兼容性: macOS (darwin), Ubuntu (linux), CentOS (linux), Windows (win32)
  * 聚焦：基础设施安全、SSH 防护、MCP 权限越界与记忆认知安全
  *
- * @integrity sha256:0e5a0858ab0a0d645c17bcd0bad7879cfbf244d0833e86dd67e17467567a3f2b
+ * SECURITY NOTE: All commands are from a hardcoded whitelist.
+ * No shell: true, no string concatenation, args passed as array.
+ * No user-controlled command execution.
+ *
+ * @integrity sha256:5912818ac4e698f5deb314e882baee812846fd1efb8268f11523b873b3ebe2dc
  */
 
 const fs = require('fs');
@@ -20,6 +24,7 @@ const https = require('https');
 // ──────────────────────────────────────────
 const PUSH_ENABLED = process.argv.includes('--push');
 const GENERATE_CONFIG_BASELINE = process.argv.includes('--generate-config-baseline');
+const UPDATE_SKILL_BASELINE = process.argv.includes('--update-skill-baseline');
 
 // 环境预设
 const platform = os.platform();
@@ -241,9 +246,9 @@ function generateConfigBaseline() {
     const filesToHash = [];
 
     // 确定需要监控的配置文件
+    // 注意: devices/paired.json 被排除，因为巡检脚本运行时会更新该文件
     const configFiles = [
         path.join(OC, 'openclaw.json'),
-        path.join(OC, 'devices/paired.json'),
         path.join(OC, 'config.json'),
         path.join(OC, 'settings.json')
     ];
@@ -553,7 +558,9 @@ if (fs.existsSync(baselinePath)) {
                     return;
                 }
             } else {
-                if (!targetPath.startsWith(OC) && !targetPath.startsWith('/etc/')) {
+                // 允许 OC 目录、/etc/ 目录以及用户 SSH 相关文件
+                const isInHomeSsh = targetPath.startsWith(path.join(HOME, '.ssh'));
+                if (!targetPath.startsWith(OC) && !targetPath.startsWith('/etc/') && !isInHomeSsh) {
                     checksOutput.push(`${fileRef}: SKIPPED (path outside allowed scope)`);
                     return;
                 }
@@ -563,8 +570,11 @@ if (fs.existsSync(baselinePath)) {
 
             if (actualHash === expectedHash) {
                 checksOutput.push(`${fileRef}: OK`);
+            } else if (actualHash === null) {
+                checksOutput.push(`${fileRef}: FAILED (文件不存在或无法读取)`);
+                hashStatus = "FAILED";
             } else {
-                checksOutput.push(`${fileRef}: FAILED`);
+                checksOutput.push(`${fileRef}: FAILED (哈希不匹配: 预期 ${expectedHash.substring(0, 16)}..., 实际 ${actualHash.substring(0, 16)}...)`);
                 hashStatus = "FAILED";
             }
         }
@@ -600,20 +610,17 @@ let permOk = true;
 
 if (platform === 'win32') {
     const permOCWin = checkWindowsFilePermission(path.join(OC, 'openclaw.json'));
-    const permPairedWin = checkWindowsFilePermission(path.join(OC, 'devices/paired.json'));
     const sshdConfigPath = path.join(process.env.PROGRAMDATA || 'C:\\ProgramData', 'ssh', 'sshd_config');
     const permSshdWin = checkWindowsFilePermission(sshdConfigPath);
     const permAuthKeysWin = checkWindowsFilePermission(path.join(HOME, '.ssh/authorized_keys'));
 
     detail4 += `\n\n>>> 关键文件权限状态 (Windows ACL):
 openclaw.json     : ${permOCWin} (预期: 无 Everyone/Users 写权限)
-paired.json       : ${permPairedWin} (预期: 无 Everyone/Users 写权限)
 sshd_config       : ${permSshdWin} (预期: 无 Everyone/Users 写权限) [${sshdConfigPath}]
 authorized_keys   : ${permAuthKeysWin} (预期: 无 Everyone/Users 写权限)\n`;
 
     if (
         permOCWin === "PERMISSIVE" ||
-        permPairedWin === "PERMISSIVE" ||
         permSshdWin === "PERMISSIVE" ||
         permAuthKeysWin === "PERMISSIVE"
     ) {
@@ -621,19 +628,16 @@ authorized_keys   : ${permAuthKeysWin} (预期: 无 Everyone/Users 写权限)\n`
     }
 } else {
     const permOC = getFilePerms(path.join(OC, 'openclaw.json'));
-    const permPaired = getFilePerms(path.join(OC, 'devices/paired.json'));
     const permSshd = getFilePerms('/etc/ssh/sshd_config');
     const permAuthKeys = getFilePerms(path.join(HOME, '.ssh/authorized_keys'));
 
     detail4 += `\n\n>>> 关键文件权限状态:
 openclaw.json     : ${permOC} (预期: 600)
-paired.json       : ${permPaired} (预期: 600)
 sshd_config       : ${permSshd} (预期: 644 或 600)
 authorized_keys   : ${permAuthKeys} (预期: 600 或 644)\n`;
 
     if (
         (permOC !== "600" && permOC !== "MISSING") ||
-        (permPaired !== "600" && permPaired !== "MISSING") ||
         (permSshd !== "600" && permSshd !== "644" && permSshd !== "MISSING") ||
         (permAuthKeys !== "600" && permAuthKeys !== "644" && permAuthKeys !== "MISSING")
     ) {
@@ -698,28 +702,95 @@ let allMcpFiles = SKILL_SCAN_DIRS.flatMap(d => getAllFiles(d)).concat(getAllFile
 let curHashes = allMcpFiles.map(f => `${getFileHash(f)}  ${f}`).join('\n') + '\n';
 fs.writeFileSync(curHashPath, curHashes);
 
+// 如果指定了 --update-skill-baseline，则更新基线并退出
+if (UPDATE_SKILL_BASELINE) {
+    fs.writeFileSync(baseHashPath, curHashes);
+    console.log(`${COLORS.green}✅ Skill/MCP 基线已更新: ${baseHashPath}${COLORS.reset}`);
+    console.log(`${COLORS.dim}   已记录 ${allMcpFiles.length} 个文件的哈希${COLORS.reset}`);
+    process.exit(0);
+}
+
 if (fs.existsSync(baseHashPath)) {
     let baseData = fs.readFileSync(baseHashPath, 'utf-8');
     if (baseData !== curHashes) {
-        // JS-based diff: compare line by line (cross-platform, no external diff/fc dependency)
-        let baseLines = baseData.split('\n');
-        let curLines = curHashes.split('\n');
-        let diffLines = [];
-        let maxLen = Math.max(baseLines.length, curLines.length);
-        for (let i = 0; i < maxLen; i++) {
-            if (baseLines[i] !== curLines[i]) {
-                if (baseLines[i]) diffLines.push(`- ${baseLines[i]}`);
-                if (curLines[i]) diffLines.push(`+ ${curLines[i]}`);
+        // 智能 diff：分类统计新增、修改、删除
+        let baseMap = new Map();
+        let curMap = new Map();
+        baseData.split('\n').filter(l => l.trim()).forEach(line => {
+            const parts = line.split('  ');
+            if (parts.length >= 2) baseMap.set(parts[1], parts[0]);
+        });
+        curHashes.split('\n').filter(l => l.trim()).forEach(line => {
+            const parts = line.split('  ');
+            if (parts.length >= 2) curMap.set(parts[1], parts[0]);
+        });
+
+        let added = [];      // 新增文件
+        let modified = [];   // 修改的文件（哈希变了）
+        let removed = [];    // 删除的文件
+
+        // 检查新增和修改
+        for (let [filePath, hash] of curMap) {
+            if (!baseMap.has(filePath)) {
+                added.push(filePath);
+            } else if (baseMap.get(filePath) !== hash) {
+                modified.push(filePath);
             }
         }
-        let diffResult = diffLines.join('\n');
-        appendWarn(itemName, "检测到 Skill/MCP 文件被非法篡改或新增", diffResult || "检测到差异，但 diff 输出为空");
+        // 检查删除
+        for (let filePath of baseMap.keys()) {
+            if (!curMap.has(filePath)) removed.push(filePath);
+        }
+
+        // 提取受影响的 Skill 名称
+        function extractSkillNames(filePaths) {
+            let names = new Set();
+            filePaths.forEach(fp => {
+                const match = fp.match(/skills[/\\]([^/\\]+)/);
+                if (match) names.add(match[1]);
+            });
+            return Array.from(names).slice(0, 10); // 最多显示10个
+        }
+
+        let summary = [];
+        if (added.length > 0) summary.push(`新增 ${added.length} 个文件`);
+        if (modified.length > 0) summary.push(`修改 ${modified.length} 个文件`);
+        if (removed.length > 0) summary.push(`删除 ${removed.length} 个文件`);
+
+        let detail = `>>> 变更摘要: ${summary.join('，')}\n\n`;
+
+        let affectedSkills = extractSkillNames([...added, ...modified, ...removed]);
+        if (affectedSkills.length > 0) {
+            detail += `>>> 受影响的 Skill:\n${affectedSkills.map(s => `   - ${s}`).join('\n')}\n`;
+        }
+
+        // 显示部分变更详情（限制数量）
+        detail += '\n>>> 变更详情（前 20 个）:\n';
+        let allChanges = [
+            ...added.slice(0, 10).map(f => `+ [新增] ${path.basename(f)}`),
+            ...modified.slice(0, 10).map(f => `~ [修改] ${path.basename(f)}`),
+            ...removed.slice(0, 10).map(f => `- [删除] ${path.basename(f)}`)
+        ].slice(0, 20);
+        detail += allChanges.join('\n') || '  (无详细变更信息)';
+
+        detail += '\n\n💡 提示: 如确认是正常安装/更新 Skill，请执行:\n';
+        detail += `   node ${path.basename(__filename)} --update-skill-baseline\n`;
+
+        // 判断是否为新增 Skill（只有新增，没有修改已有文件）
+        if (modified.length === 0 && removed.length === 0 && added.length > 0) {
+            appendInfo(itemName, `检测到 ${added.length} 个新增文件（可能是新安装 Skill）`, detail);
+        } else {
+            appendWarn(itemName, "⚠️ 检测到 Skill/MCP 文件变更", detail);
+        }
     } else {
-        appendInfo(itemName, "工具包哈希基线校验通过", "✅ 工具包哈希基线校验通过");
+        appendInfo(itemName, "✅ 工具包哈希基线校验通过", `已校验 ${allMcpFiles.length} 个文件，无异常`);
     }
 } else {
     fs.writeFileSync(baseHashPath, curHashes);
-    appendInfo(itemName, "首次运行，已建立基线", "✅ 首次运行，已建立基线");
+    let detail = `首次运行，已建立基线\n\n已记录 ${allMcpFiles.length} 个文件的哈希\n\n`;
+    detail += `提示: 后续安装或更新 Skill 后，如需更新基线，请执行:\n`;
+    detail += `   node ${path.basename(__filename)} --update-skill-baseline`;
+    appendInfo(itemName, "首次运行，已建立基线", detail);
 }
 
 // [6/14] 登录与 SSH 审计
