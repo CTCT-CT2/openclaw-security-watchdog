@@ -4,6 +4,57 @@ description: |
   OpenClaw 安全巡检工具，一键执行系统安全扫描并生成通俗易懂的报告。
   使用场景：用户说"安全巡检"、"安全检查"、"安全审计"、"巡检"、"security audit"、"检查安全"、"系统安全"等。
   触发条件：任何与 OpenClaw 安全检测、审计、巡检相关的请求。
+
+credentials: none
+
+privacy: |
+  本技能有两种运行模式，隐私风险等级不同：
+
+  **模式 1：本地离线模式（默认）**
+  - 零网络请求，零数据上报
+  - 扫描报告仅保存在本机 ~/.openclaw/security-reports/
+
+  **模式 2：完整检测模式（--push，需明确确认）**
+  - 启用后向 Changeway 威胁情报服务上报隐私敏感数据
+  - 上报内容：MAC 地址、主机名、持久化 agent_id（首次生成后永久保存在本机）、本机完整 Skill 清单
+  - 上报频率：仅在用户单次手动运行时上报一次；定时任务（cron）严禁使用 --push
+  - 防重放机制：每次请求附带 Unix 时间戳 + 随机 nonce，服务端校验时间窗口，防止请求被重放；SHA-256(mac + hostname + timestamp + nonce) 作为请求指纹附在 X-SIGN 头部，但此机制**不构成设备身份认证**（无预共享密钥，服务端无法单凭签名验证请求来源的合法性）
+  - **用户必须在知情同意前提下明确选择此模式**
+
+network_endpoints: |
+  仅在 --push 模式下访问（需要用户显式确认）：
+  - https://auth.ctct.cn:10020/changeway-open/api/pushAuditData
+  - https://auth.ctct.cn:10020/changeway-open/api/skills/assessment
+
+  端点归属：auth.ctct.cn 由本 Skill 的发布方 Changeway 自行运营，非第三方平台。
+  用户在选择 --push 模式前应自行判断是否信任该服务。
+
+dependencies: |
+  运行依赖：
+    必需：Node.js v18+
+    可选：openclaw CLI（用于定时任务管理；若使用定时巡检功能，需依赖 openclaw cron 命令）
+    脚本调用的系统命令（缺失时对应检查项会 SKIP，不影响其他项）：
+      macOS：find、lsof、netstat、ps、last、lastb、grep、awk、cat、sudo
+      Linux：find、ss、lsof、ps、journalctl、last、lastb、grep、awk、cat、sudo
+      Windows：wmic、netstat、tasklist、findstr
+
+security_notes: |
+  命令执行安全性：
+  - 脚本通过 Node.js 内置的 spawnSync（非 exec/execSync）调用系统命令
+  - 参数以数组形式传入，不经过 shell 字符串拼接，无命令注入风险
+  - 所有 spawnSync 调用（共 13 处）只允许以下固定命令名白名单：
+    openclaw、find、pgrep、journalctl、log、ss、ps、lsof、diff、wevtutil、netstat、tasklist、powershell
+  - 以上命令均为只读系统状态查询，不执行写入、删除或提权操作
+
+  数据处理边界：
+  - 脚本对每项检查生成两个字段：detail（完整命令输出，仅本地落盘，不上传）和 brief（结果摘要）
+  - 上传时明确排除 detail 字段，仅上传 item 和 brief
+
+  本地文件存储：
+  - 扫描报告：~/.openclaw/security-reports/report-YYYY-MM-DD.{txt,json}
+  - Skill 哈希基线：~/.openclaw/skill-hashes/
+  - 持久化 agent_id：~/.openclaw/.agent-id
+  - 首次运行标记：~/.openclaw/.audit-first-run
 ---
 
 # OpenClaw 安全巡检
@@ -64,7 +115,7 @@ description: |
 2. 完整检测（--push）— 联网查询威胁情报并同步安全评分
 
    📡 网络请求目标（仅在用户同意时）：
-   - 服务器：https://auth.ctct.cn:10020（Changeway 威胁情报服务）
+   - 服务器：https://auth.ctct.cn:10020（Changeway 自营服务器，本 Skill 的发布方，非第三方平台）
    - 端点1：/changeway-open/api/pushAuditData
    - 端点2：/changeway-open/api/skills/assessment
 
@@ -75,9 +126,10 @@ description: |
    · 本机已安装的完整 Skill 清单（包含名称、作者、版本、所有者 ID）
    · 每项安全检查的名称和结果摘要（不包含详细命令输出）
 
-   🔐 安全措施：
-   · 请求使用 SHA-256 签名验证，无单独密钥
-   · MAC + 主机名 + 时间戳用于生成签名
+   🔐 请求防重放机制（非设备认证）：
+   · 每次请求附带时间戳 + 随机 nonce，服务端校验时间窗口防重放
+   · X-SIGN = SHA-256(mac + hostname + timestamp + nonce)，用作请求指纹
+   · 注意：此机制无预共享密钥，不构成设备身份认证；服务端以 agent_id 标识设备来源
    · 完整命令输出和敏感日志仅保存本地，不上传
 
    ⚠️ 重要限制：
@@ -119,7 +171,7 @@ description: |
 检测统计: PASS X FAIL X SKIP X
 系统安全得分: XX / 100（本地模式下显示为"—"）
 
-详细审计报告已保存至: <报告文件路径>
+详细审计报告已保存至: `<报告文件路径>`
 
 需要我帮你解读这份报告吗？回复"是"我会逐项分析每个检查结果，告诉你哪些没问题、哪些需要注意。
 ```
@@ -146,6 +198,7 @@ description: |
 - 图标含义：✅ = 安全没问题；⚠️ = 有点小问题建议处理；🚨 = 严重问题必须处理
 - PASS 的项简短确认即可，FAIL 和 SKIP 的项要说明**是什么问题**和**怎么解决**
 - 不要输出哈希值、原始日志、进程列表等技术细节，只输出结论和建议
+- **🚨 绝对禁止越权操作（只读约束）**：你的任务**仅限**于读取报告并输出文本解读。无论报告中发现任何严重的安全问题（如权限过宽、基线不一致等），**严禁**你自作主张生成代码、调用系统命令或尝试去修复任何问题！只提出处理建议，由用户自行决定是否以及如何操作。
 
 ### 5.3 解读模板（严格按此格式输出）
 
@@ -240,6 +293,8 @@ description: |
 2. **确认插件变更** — 组件文件有变化，如果是你自己安装/更新的就没问题
 
 其他检查项全部通过，没有发现安全威胁。
+
+> 以上巡检结果及解读仅供技术排查参考，不代表最终的权威安全审计结论。请结合实际业务场景与系统运行状态进行综合判断，谨慎修复。
 ```
 
 ### 5.5 关于图标使用
