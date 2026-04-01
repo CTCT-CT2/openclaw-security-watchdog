@@ -11,7 +11,7 @@
  * (a Windows Node.js limitation), but remains protected against injection 
  * by utilizing strictly hardcoded argument arrays.
  *
- * @integrity sha256:565556ef7ed65dc93f8822bf59a9df3591648585467a094deedd99a11208325d
+ * @integrity sha256:609367d5db519e6c370c29c489553d38a5a9992e8aad88c95f736cc8d7427487
  */
 
 const fs = require('fs');
@@ -31,6 +31,7 @@ const UPDATE_SKILL_BASELINE = process.argv.includes('--update-skill-baseline');
 
 // 环境预设
 const platform = os.platform();
+const PLATFORM_NAME = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' }[platform] || platform;
 const HOME = os.homedir();
 const OC = process.env.OPENCLAW_STATE_DIR || path.join(HOME, '.openclaw');
 
@@ -410,9 +411,9 @@ if (!res1.success) {
 // 过滤指定的 skills 条目
 res1.output = filterAuditOutput(res1.output, FILTER_SKILLS_KEYWORDS);
 if (res1.success) {
-    appendInfo(itemName, "运行环境各项指标正常", res1.output);
+    appendInfo(itemName, "运行环境各项指标正常（数据来源: openclaw security audit --deep）", res1.output);
 } else {
-    appendWarn(itemName, "核心环境存在异常（详见报告）", res1.output);
+    appendWarn(itemName, "核心环境存在异常（数据来源: openclaw security audit --deep 详见报告）", res1.output);
 }
 
 // [2/14] 敏感目录变更
@@ -513,10 +514,25 @@ Object.keys(byGroup).sort().forEach(grp => {
         detailLines.push(`  [${grp}/...]: ${list.length} 个文件（已折叠）`);
     }
 });
+// 定义高风险变更路径
+const HIGH_RISK_PATHS = [
+    '/credentials/', '/.ssh/', '/etc/shadow', '/etc/passwd',
+    'openclaw.json', 'sshd_config', 'authorized_keys'
+];
+
+const riskyChanges = lines.filter(f =>
+    HIGH_RISK_PATHS.some(p => f.includes(p))
+);
+
 if (totalCount === 0) {
     appendInfo(itemName, `近24小时变更 0 个配置文件`, `无文件变更`);
+} else if (riskyChanges.length > 0) {
+    const riskDetail = `>>> 高风险文件变更 (${riskyChanges.length} 个):\n` +
+        riskyChanges.slice(0, 10).map(f => `  ⚠️ ${normalizePath(f)}`).join('\n') +
+        '\n\n' + detailLines.join('\n');
+    appendWarn(itemName, `近24小时变更 ${totalCount} 个文件，其中 ${riskyChanges.length} 个涉及高风险路径，请确认是否为授权操作`, riskDetail);
 } else {
-    appendInfo(itemName, `近24小时变更 ${totalCount} 个文件（核心/折叠显示）`, detailLines.join('\n'));
+    appendInfo(itemName, `近24小时变更 ${totalCount} 个文件，未涉及高风险路径`, detailLines.join('\n'));
 }
 
 // [3/14] Gateway 环境变量泄露扫描（仅检查变量名是否存在，不读取/记录值）
@@ -554,20 +570,44 @@ fs.appendFileSync(REPORT_FILE, `\n[3/14] Gateway 环境变量泄露扫描`);
                 );
             }
         } else if (platform === 'darwin') {
-            appendSkip(
-                itemName,
-                "macOS 受 SIP 限制，跳过进程环境变量扫描",
-                "macOS 下读取其他进程环境变量受 SIP/权限限制。\n建议通过网关侧诊断接口或配置审计来验证敏感变量的使用情况。"
-            );
+            // macOS 降级方案：审计配置文件中的敏感字段
+            const configPath = path.join(OC, 'openclaw.json');
+            try {
+                const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+                const configStr = JSON.stringify(config);
+                const sensitiveInConfig = /("password"|"secret"|"token"|"private_key")\s*:\s*"[^"]+"/gi;
+                const hits = configStr.match(sensitiveInConfig) || [];
+                if (hits.length > 0) {
+                    appendWarn(itemName,
+                        `配置文件中发现 ${hits.length} 个疑似明文凭证字段（进程级检查受 macOS 平台限制跳过）`,
+                        hits.map(h => h.replace(/:.*/,': (REDACTED)')).join('\n'));
+                } else {
+                    appendInfo(itemName, "配置文件中未发现明文凭证（进程级检查受 macOS 平台限制跳过）", "");
+                }
+            } catch (e) {
+                appendSkip(itemName, `macOS 平台降级检查失败`, e.message);
+            }
         } else if (platform === 'win32') {
-            appendSkip(
-                itemName,
-                "Windows 下无法直接读取其他进程环境变量，跳过扫描",
-                "Windows 不支持 /proc 文件系统，且读取其他进程环境变量需要特殊权限。\n建议通过网关侧诊断接口或配置审计来验证敏感变量的使用情况。"
-            );
+            // Windows 降级方案：审计配置文件中的敏感字段
+            const configPath = path.join(OC, 'openclaw.json');
+            try {
+                const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+                const configStr = JSON.stringify(config);
+                const sensitiveInConfig = /("password"|"secret"|"token"|"private_key")\s*:\s*"[^"]+"/gi;
+                const hits = configStr.match(sensitiveInConfig) || [];
+                if (hits.length > 0) {
+                    appendWarn(itemName,
+                        `配置文件中发现 ${hits.length} 个疑似明文凭证字段（进程级检查受 Windows 平台限制跳过）`,
+                        hits.map(h => h.replace(/:.*/,': (REDACTED)')).join('\n'));
+                } else {
+                    appendInfo(itemName, "配置文件中未发现明文凭证（进程级检查受 Windows 平台限制跳过）", "");
+                }
+            } catch (e) {
+                appendSkip(itemName, `Windows 平台降级检查失败`, e.message);
+            }
         }
     } else {
-        appendInfo(itemName, "未发现运行中的网关进程", "未发现运行中的网关进程。");
+        appendInfo(itemName, `${PLATFORM_NAME} 平台未发现运行中的网关进程`,  `${PLATFORM_NAME} 平台未发现运行中的网关进程`);
     }
 }
 
@@ -863,8 +903,13 @@ if (platform === 'linux') {
     failedSsh = parseInt(psOut, 10) || 0;
 }
 let detail6 = `--- SSH 爆破尝试 ---\nFailed SSH attempts (24h): ${failedSsh}`;
-if (failedSsh > 3) appendWarn(itemName, `⚠️ 近24h SSH 失败高达 ${failedSsh} 次，疑似遭遇爆破`, detail6);
-else appendInfo(itemName, `近24h SSH 失败尝试 ${failedSsh} 次`, detail6);
+if (failedSsh > 100) {
+    appendWarn(itemName, `🚨 近24h SSH 失败 ${failedSsh} 次，高度疑似遭受暴力破解`, detail6);
+} else if (failedSsh > 10) {
+    appendWarn(itemName, `⚠️ 近24h SSH 失败 ${failedSsh} 次，建议关注`, detail6);
+} else {
+    appendInfo(itemName, `近24h SSH 失败尝试 ${failedSsh} 次`, detail6);
+}
 
 
 // [7/14] 监听端口与高资源进程
@@ -887,10 +932,30 @@ if (platform === 'linux') {
     psRaw = spawnCmd('tasklist', ['/FO', 'CSV', '/NH']);
     psRaw = psRaw.split('\n').slice(0, 6).join('\n');
 }
+// 规则 1: 检测绑定 0.0.0.0 或 [::] 的非标准端口（排除 22/80/443/53 等常规端口）
+const knownPorts = new Set(['22', '80', '443', '53']);
+const riskyPorts = portsRaw.split('\n').filter(line => {
+    return /0\.0\.0\.0|\[::\]/.test(line) && !knownPorts.has((line.match(/:(\d+)\s/) || [])[1]);
+});
+
+// 规则 2: 高资源进程检测（CPU > 80%）
+const highCpuProcesses = psRaw.split('\n').filter(line => {
+    const cpu = parseFloat((line.match(/\s+([\d.]+)\s+[\d.]+\s+\S+$/) || [])[1]);
+    return cpu > 80;
+});
+
 let portCount = portsRaw ? portsRaw.split('\n').filter(Boolean).length : 0;
 let detail7 = `--- 监听端口与高资源进程 ---\n>>> 全局网络监听状态:\n${portsRaw || '无数据'}\n\n>>> 资源占用 Top 5 进程快照:\n${psRaw || '无数据'}`;
-if (portCount > 0) appendInfo(itemName, `发现 ${portCount} 条疑似对外监听记录，已记录状态快照`, detail7);
-else appendInfo(itemName, "当前无对外开放的监听端口；资源进程快照已记录", detail7);
+
+if (riskyPorts.length > 0) {
+    appendWarn(itemName, `发现 ${riskyPorts.length} 个非标准端口监听全接口(0.0.0.0)，存在暴露风险`, detail7);
+} else if (highCpuProcesses.length > 0) {
+    appendWarn(itemName, `发现 ${highCpuProcesses.length} 个高 CPU 占用进程，请排查`, detail7);
+} else if (portCount > 0) {
+    appendInfo(itemName, `发现 ${portCount} 个监听端口，均在已知范围内`, detail7);
+} else {
+    appendInfo(itemName, "当前无对外开放的监听端口", detail7);
+}
 
 // [8/14] OpenClaw 定时任务
 itemName = "自动化任务与后门驻留排查";
@@ -1053,7 +1118,15 @@ if (platform === 'linux') {
         sudoCount += countMatchesInFile(logPath, /sudo.*COMMAND/gim);
     });
 } else if (platform === 'darwin') {
-    sudoCount = countMatchesInFile('/var/log/system.log', /sudo.*COMMAND/gim);
+    // 优先使用 unified logging
+    let logOut = spawnCmd('log', ['show', '--predicate', 'process == "sudo"', '--last', '24h', '--style', 'compact']);
+    if (logOut) {
+        sudoCount = (logOut.match(/COMMAND/gi) || []).length;
+    }
+    // 回退到传统日志
+    if (sudoCount === 0) {
+        sudoCount = countMatchesInFile('/var/log/system.log', /sudo.*COMMAND/gim);
+    }
 } else if (platform === 'win32') {
     // Event ID 4672 = 特权提升
     let psOut = spawnCmd('powershell', ['-NoProfile', '-Command',
@@ -1370,8 +1443,8 @@ if (skillMetaList.length === 0) {
     if (!PUSH_ENABLED) {
         appendInfo(
             itemNameSkill,
-            `已列出本机已安装的 ${skillMetaList.length} 个 Skill 组件（威胁情报查询需加 --push）`,
-            scannedSummary
+            `已列出本机已安装的 ${skillMetaList.length} 个 Skill 组件（本地模式仅清单列举，威胁情报查询需加 --push）`,
+            scannedSummary+ '\n\n⚠️ 本地模式无法判定组件安全性。如需威胁情报比对，请附加 --push 参数运行。'
         );
         finalizeAndPushData();
     } else {
