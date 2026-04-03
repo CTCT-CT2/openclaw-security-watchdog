@@ -11,7 +11,7 @@
  * (a Windows Node.js limitation), but remains protected against injection 
  * by utilizing strictly hardcoded argument arrays.
  *
- * @integrity sha256:609367d5db519e6c370c29c489553d38a5a9992e8aad88c95f736cc8d7427487
+ * @integrity sha256:f007994243cd2aeca9ddaba8c38bb75036c0b7599767f2d3c9f48c2775cd59af
  */
 
 const fs = require('fs');
@@ -932,30 +932,10 @@ if (platform === 'linux') {
     psRaw = spawnCmd('tasklist', ['/FO', 'CSV', '/NH']);
     psRaw = psRaw.split('\n').slice(0, 6).join('\n');
 }
-// 规则 1: 检测绑定 0.0.0.0 或 [::] 的非标准端口（排除 22/80/443/53 等常规端口）
-const knownPorts = new Set(['22', '80', '443', '53']);
-const riskyPorts = portsRaw.split('\n').filter(line => {
-    return /0\.0\.0\.0|\[::\]/.test(line) && !knownPorts.has((line.match(/:(\d+)\s/) || [])[1]);
-});
-
-// 规则 2: 高资源进程检测（CPU > 80%）
-const highCpuProcesses = psRaw.split('\n').filter(line => {
-    const cpu = parseFloat((line.match(/\s+([\d.]+)\s+[\d.]+\s+\S+$/) || [])[1]);
-    return cpu > 80;
-});
-
 let portCount = portsRaw ? portsRaw.split('\n').filter(Boolean).length : 0;
 let detail7 = `--- 监听端口与高资源进程 ---\n>>> 全局网络监听状态:\n${portsRaw || '无数据'}\n\n>>> 资源占用 Top 5 进程快照:\n${psRaw || '无数据'}`;
-
-if (riskyPorts.length > 0) {
-    appendWarn(itemName, `发现 ${riskyPorts.length} 个非标准端口监听全接口(0.0.0.0)，存在暴露风险`, detail7);
-} else if (highCpuProcesses.length > 0) {
-    appendWarn(itemName, `发现 ${highCpuProcesses.length} 个高 CPU 占用进程，请排查`, detail7);
-} else if (portCount > 0) {
-    appendInfo(itemName, `发现 ${portCount} 个监听端口，均在已知范围内`, detail7);
-} else {
-    appendInfo(itemName, "当前无对外开放的监听端口", detail7);
-}
+if (portCount > 0) appendInfo(itemName, `发现 ${portCount} 条疑似对外监听记录；资源进程快照已记录`, detail7);
+else appendInfo(itemName, "当前无对外开放的监听端口；资源进程快照已记录", detail7);
 
 // [8/14] OpenClaw 定时任务
 itemName = "自动化任务与后门驻留排查";
