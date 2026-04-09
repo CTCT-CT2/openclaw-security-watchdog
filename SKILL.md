@@ -1,9 +1,9 @@
 ---
-name: ctct-security-patrol
+name: ctct-security-patrol-wb
 description: |
-  OpenClaw 安全巡检工具，一键执行系统安全扫描并生成通俗易懂的报告。
+  WorkBuddy 安全巡检工具，一键执行系统安全扫描并生成通俗易懂的报告。
   使用场景：用户说"安全巡检"、"安全检查"、"安全审计"、"巡检"、"security audit"、"检查安全"、"系统安全"等。
-  触发条件：任何与 OpenClaw 安全检测、审计、巡检相关的请求。
+  触发条件：任何与安全检测、审计、巡检相关的请求。
 
 credentials: none
 
@@ -12,12 +12,12 @@ privacy: |
 
   **模式 1：本地离线模式（默认）**
   - 零网络请求，零数据上报
-  - 扫描报告仅保存在本机 ~/.openclaw/security-reports/
+  - 扫描报告仅保存在本机 ~/.workbuddy-security/security-reports/
 
   **模式 2：完整检测模式（--push，需明确确认）**
   - 启用后向 Changeway 威胁情报服务上报隐私敏感数据
   - 上报内容：MAC 地址、主机名、持久化 agent_id（首次生成后永久保存在本机）、本机完整 Skill 清单
-  - 上报频率：仅在用户单次手动运行时上报一次；定时任务（cron）严禁使用 --push
+  - 上报频率：仅在用户单次手动运行时上报一次；定时任务（Automation）严禁使用 --push
   - 防重放机制：每次请求附带 Unix 时间戳 + 随机 nonce，服务端校验时间窗口，防止请求被重放；SHA-256(mac + hostname + timestamp + nonce) 作为请求指纹附在 X-SIGN 头部，但此机制**不构成设备身份认证**（无预共享密钥，服务端无法单凭签名验证请求来源的合法性）
   - **用户必须在知情同意前提下明确选择此模式**
 
@@ -32,7 +32,7 @@ network_endpoints: |
 dependencies: |
   运行依赖：
     必需：Node.js v18+
-    可选：openclaw CLI（用于定时任务管理；若使用定时巡检功能，需依赖 openclaw cron 命令）
+    可选：WorkBuddy Automation（用于定时任务管理；若使用定时巡检功能，通过 WorkBuddy 内置 Automation 机制配置）
     脚本调用的系统命令（缺失时对应检查项会 SKIP，不影响其他项）：
       macOS：find、lsof、netstat、ps、last、lastb、grep、awk、cat、sudo
       Linux：find、ss、lsof、ps、journalctl、last、lastb、grep、awk、cat、sudo
@@ -43,7 +43,7 @@ security_notes: |
   - 脚本通过 Node.js 内置的 spawnSync（非 exec/execSync）调用系统命令
   - 参数以数组形式传入，不经过 shell 字符串拼接，无命令注入风险
   - 所有 spawnSync 调用（共 13 处）只允许以下固定命令名白名单：
-    openclaw、find、pgrep、journalctl、log、ss、ps、lsof、diff、wevtutil、netstat、tasklist、powershell
+    find、pgrep、journalctl、log、ss、ps、lsof、diff、wevtutil、netstat、tasklist、powershell
   - 以上命令均为只读系统状态查询，不执行写入、删除或提权操作
 
   数据处理边界：
@@ -51,13 +51,13 @@ security_notes: |
   - 上传时明确排除 detail 字段，仅上传 item 和 brief
 
   本地文件存储：
-  - 扫描报告：~/.openclaw/security-reports/report-YYYY-MM-DD.{txt,json}
-  - Skill 哈希基线：~/.openclaw/skill-hashes/
-  - 持久化 agent_id：~/.openclaw/.agent-id
-  - 首次运行标记：~/.openclaw/.audit-first-run
+  - 扫描报告：~/.workbuddy-security/security-reports/report-YYYY-MM-DD.{txt,json}
+  - Skill 哈希基线：~/.workbuddy-security/skill-hashes/
+  - 持久化 agent_id：~/.workbuddy-security/.agent-id
+  - 首次运行标记：~/.workbuddy-security/.audit-first-run
 ---
 
-# OpenClaw 安全巡检
+# WorkBuddy 安全巡检
 
 ## 第一步：检查运行环境
 
@@ -68,7 +68,7 @@ security_notes: |
 
 ## 第二步：首次使用引导
 
-检查文件 `~/.openclaw/.audit-first-run` 是否存在。
+检查文件 `~/.workbuddy-security/.audit-first-run` 是否存在。
 
 **如果文件已存在** → 跳过本步，直接进入第三步。
 
@@ -77,7 +77,7 @@ security_notes: |
 ```
 你好！这是首次使用安全巡检功能。
 
-除了现在手动执行，你还可以设置每天自动巡检，系统会自动检查并把结果推送给你。**（默认执行时间为 23:45，也可以自定义为其他时间）**
+除了现在手动执行，你还可以设置每天自动巡检，WorkBuddy 会通过内置 Automation 在后台定时运行并生成报告。**（默认执行时间为 23:45，也可以自定义为其他时间）**
 
 请选择：
 1. 设置每天自动巡检（推荐，省心）
@@ -86,14 +86,14 @@ security_notes: |
 
 根据用户回复执行：
 
-- 用户选 **1**（或回复"设置"、"自动"、"定时"等含义）→ 先创建标记文件 `~/.openclaw/.audit-first-run`（内容写 `setup-done`），然后**必须读取** [references/cron-setup.md](references/cron-setup.md) 文件，严格按照其中的步骤帮用户配置定时任务。配置完成后再继续第三步。
-- 用户选 **2**（或回复"先跑一次"、"以后再说"、"跳过"等含义）→ 创建标记文件 `~/.openclaw/.audit-first-run`（内容写 `skipped`），然后继续第三步。
+- 用户选 **1**（或回复"设置"、"自动"、"定时"等含义）→ 先创建标记文件 `~/.workbuddy-security/.audit-first-run`（内容写 `setup-done`），然后**必须读取** [references/cron-setup.md](references/cron-setup.md) 文件，严格按照其中的步骤帮用户配置定时自动巡检。配置完成后再继续第三步。
+- 用户选 **2**（或回复"先跑一次"、"以后再说"、"跳过"等含义）→ 创建标记文件 `~/.workbuddy-security/.audit-first-run`（内容写 `skipped`），然后继续第三步。
 
 **关于定时任务的硬性要求**：
-- 必须使用 `openclaw cron add` 命令
+- 必须使用 WorkBuddy 内置的 Automation 机制（通过 automation_update 工具创建）
 - 禁止使用系统 crontab（`crontab -e` 等）
-- 原因：系统 crontab 无法正确初始化 OpenClaw 环境，会导致执行失败
-- **cron 命令中严禁添加 `--push` 参数**：定时任务只以本地离线模式运行，绝不自动向远端上报设备标识
+- 原因：系统 crontab 无法正确初始化 WorkBuddy 环境，会导致执行失败
+- **Automation 的 prompt 中严禁添加 `--push` 参数**：定时任务只以本地离线模式运行，绝不自动向远端上报设备标识
 
 ## 第三步：询问检测模式
 
@@ -103,7 +103,7 @@ security_notes: |
 请选择检测模式：
 
 1. 仅本地扫描（默认）— 不联网、不发送任何数据
-   · 所有扫描报告仅保存在本地 ~/.openclaw/security-reports/
+   · 所有扫描报告仅保存在本地 `~/.workbuddy-security/security-reports/`
    · 适合离线环境或隐私敏感场景
    · 无任何网络请求
 
@@ -122,7 +122,7 @@ security_notes: |
    📊 上报的隐私敏感数据包括：
    · MAC 地址（如 a1:b2:c3:d4:e5:f6）
    · 主机名（如 MacBook-Pro.local）
-   · agent_id（首次自动生成并永久保存在 ~/.openclaw/.agent-id，后续复用）
+   · agent_id（首次自动生成并永久保存在 `~/.workbuddy-security/.agent-id`，后续复用）
    · 本机已安装的完整 Skill 清单（包含名称、作者、版本、所有者 ID）
    · 每项安全检查的名称和结果摘要（不包含详细命令输出）
 
@@ -184,7 +184,7 @@ security_notes: |
 
 ### 5.1 读取报告文件
 
-读取文件 `~/.openclaw/security-reports/report-YYYY-MM-DD.txt`，其中 YYYY-MM-DD 是今天的日期。
+读取文件 `~/.workbuddy-security/security-reports/report-YYYY-MM-DD.txt`，其中 YYYY-MM-DD 是今天的日期。
 
 如果文件不存在，告诉用户："没有找到今天的报告文件，可能扫描还没完成，请稍后再试。"
 
@@ -246,13 +246,13 @@ security_notes: |
 ✅ 环境扫描通过。有 3 条配置建议（如反向代理信任设置、credentials 目录权限），不影响安全但建议后续优化。
 
 ### 2. 系统敏感目录防篡改监控
-✅ 过去 24 小时有 21 个文件变更，主要是 OpenClaw 的会话记录和日志等正常运行产生的文件，未发现异常篡改。
+✅ 过去 24 小时有 21 个文件变更，主要是 WorkBuddy 的会话记录和日志等正常运行产生的文件，未发现异常篡改。
 
 ### 3. 网关进程内存凭证隔离检查
 ⏭️ 跳过。macOS 系统限制（SIP 保护机制），无法扫描其他进程的环境变量，这是正常的，不用担心。
 
 ### 4. 核心配置防篡改与权限基线
-⚠️ 首次运行，还没有建立文件指纹基线，所以无法判断配置是否被篡改。好消息是：核心文件（openclaw.json、paired.json、sshd_config）的访问权限都设置正确。建议后续手动生成基线文件以开启防篡改监控。
+⚠️ 首次运行，还没有建立文件指纹基线，所以无法判断配置是否被篡改。好消息是：核心文件（mcp.json、sshd_config）的访问权限都设置正确。建议后续手动生成基线文件以开启防篡改监控。
 
 ### 5. 组件与插件供应链完整性
 ⚠️ 检测到 Skill/MCP 组件文件与上次基线不一致。如果你最近安装或更新了插件（如 wechat-macro-daily-report），这属于正常变更。如果没有主动操作过，建议检查是否有未经授权的组件变更。
@@ -267,7 +267,7 @@ security_notes: |
 ✅ 已拉取定时任务列表，目前有 1 个定时任务（微信宏观群日报），是你自己设置的正常任务，未发现可疑的后门任务。
 
 ### 9. 高危命令与越权行为审计
-⏭️ 跳过。今天的 OpenClaw 运行日志文件不存在，可能是今天还没有执行过需要记录的操作。不用担心，下次有日志时会自动检查。
+⏭️ 跳过。今天的 WorkBuddy 运行日志文件不存在，可能是今天还没有执行过需要记录的操作。不用担心，下次有日志时会自动检查。
 
 ### 10. 异常外联与数据外泄监控
 ⏭️ 跳过。同上，今天的日志文件不存在，无法扫描网络请求记录。
@@ -317,24 +317,22 @@ security_notes: |
 当用户后续要求"设置定时巡检"、"修改定时任务"、"自动巡检"时：
 
 1. 读取 [references/cron-setup.md](references/cron-setup.md) 文件
-2. 在执行任何配置命令前，向用户确认以下信息并等待明确同意：
+2. 在执行任何配置操作前，向用户确认以下信息并等待明确同意：
 
    **基本行为**：
-   - 定时任务将在后台持续运行（按用户指定的时间间隔，如每天、每周等）
-   - 每次执行会在本地生成报告（保存在 ~/.openclaw/security-reports/）
-   - 必须使用 `openclaw cron add` 而非系统 crontab（openclaw cron 管理独立的调度会话和超时，系统 crontab 无法正确初始化 OpenClaw 环境）
+   - 定时任务将通过 WorkBuddy 内置 Automation 在后台持续运行（按用户指定的时间间隔，如每天、每周等）
+   - 每次执行会在本地生成报告（保存在 `~/.workbuddy-security/security-reports/`）
+   - 必须使用 WorkBuddy Automation 机制，禁止使用系统 crontab
 
    **隐私和网络行为**：
    - **默认行为**：定时任务仅在本地运行，不产生任何网络请求
-   - **如果启用通知** `--announce/--channel/--to` 参数：每次巡检结果会通过 OpenClaw 消息通道（如 Telegram、钉钉）发送通知到指定 chat ID，这是额外的外部消息路径，需要用户明确知晓
-   - **严禁在定时任务中使用 --push**：定时任务的命令中绝不应该包含 `--push`，因为 --push 会让定时任务定期向 Changeway 服务器上报设备标识和 Skill 清单，造成隐私敏感数据的长期自动上报。--push 仅限用户单次手动运行时显式指定
+   - **严禁在定时任务中使用 --push**：Automation 的 prompt 中绝不应该包含 `--push`，因为 --push 会让定时任务定期向 Changeway 服务器上报设备标识和 Skill 清单，造成隐私敏感数据的长期自动上报。--push 仅限用户单次手动运行时显式指定
 
    **用户确认**：
    - 询问用户："确认要设置定时巡检吗？定时任务会每天运行扫描并保存本地报告。(是/否)"，收到"是"后再继续
-   - 如果用户问及通知功能，补充："通知功能会让结果发送到你的 Telegram/钉钉等，可选配置。"
 
 3. 严格按照 cron-setup.md 中的步骤执行
 4. **关键安全要求**：
-   - 必须使用 `openclaw cron add` 命令，禁止使用系统 crontab
-   - 定时任务的命令中严禁添加 `--push` 参数
-   - 审查用户最终的 cron 命令，确保不含 --push
+   - 必须使用 WorkBuddy Automation 机制创建定时任务，禁止使用系统 crontab
+   - Automation 任务的 prompt 中严禁添加 `--push` 参数
+   - 审查最终创建的 Automation 配置，确保不含 --push
