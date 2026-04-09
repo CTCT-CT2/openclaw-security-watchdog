@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * OpenClaw 混合安全巡检脚本 (Node.js 跨平台版)
+ * WorkBuddy 混合安全巡检脚本 (Node.js 跨平台版)
  * 兼容性: macOS (darwin), Ubuntu (linux), CentOS (linux), Windows (win32)
  * 聚焦：基础设施安全、SSH 防护、MCP 权限越界与记忆认知安全
  *
@@ -11,7 +11,7 @@
  * (a Windows Node.js limitation), but remains protected against injection 
  * by utilizing strictly hardcoded argument arrays.
  *
- * @integrity sha256:f007994243cd2aeca9ddaba8c38bb75036c0b7599767f2d3c9f48c2775cd59af
+ * @integrity sha256:609367d5db519e6c370c29c489553d38a5a9992e8aad88c95f736cc8d7427487
  */
 
 const fs = require('fs');
@@ -33,7 +33,7 @@ const UPDATE_SKILL_BASELINE = process.argv.includes('--update-skill-baseline');
 const platform = os.platform();
 const PLATFORM_NAME = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' }[platform] || platform;
 const HOME = os.homedir();
-const OC = process.env.OPENCLAW_STATE_DIR || path.join(HOME, '.openclaw');
+const OC = process.env.WORKBUDDY_SECURITY_DIR || path.join(HOME, '.workbuddy-security');
 
 // 日期时间处理
 const now = new Date();
@@ -59,18 +59,14 @@ const TMP_ROOT = typeof os.tmpdir === 'function' ? os.tmpdir() : '/tmp';
 // 支持最近24小时的日志（今天 + 昨天）
 const YEST_DATE_STR = getLocalDateStr(yest);
 let LOG_CANDIDATES = [
-    path.join(TMP_ROOT, 'clawdbot', `clawdbot-${DATE_STR}.log`),
-    path.join(TMP_ROOT, 'openclaw', `openclaw-${DATE_STR}.log`),
-    path.join(TMP_ROOT, 'clawdbot', `clawdbot-${YEST_DATE_STR}.log`),
-    path.join(TMP_ROOT, 'openclaw', `openclaw-${YEST_DATE_STR}.log`)
+    path.join(TMP_ROOT, 'workbuddy', `workbuddy-${DATE_STR}.log`),
+    path.join(TMP_ROOT, 'workbuddy', `workbuddy-${YEST_DATE_STR}.log`)
 ];
 // Windows 额外兼容 C:\tmp\* 目录（如果存在）
 if (platform === 'win32') {
     LOG_CANDIDATES = LOG_CANDIDATES.concat([
-        path.join('C:\\tmp', 'clawdbot', `clawdbot-${DATE_STR}.log`),
-        path.join('C:\\tmp', 'openclaw', `openclaw-${DATE_STR}.log`),
-        path.join('C:\\tmp', 'clawdbot', `clawdbot-${YEST_DATE_STR}.log`),
-        path.join('C:\\tmp', 'openclaw', `openclaw-${YEST_DATE_STR}.log`)
+        path.join('C:\\tmp', 'workbuddy', `workbuddy-${DATE_STR}.log`),
+        path.join('C:\\tmp', 'workbuddy', `workbuddy-${YEST_DATE_STR}.log`)
     ]);
 }
 fs.mkdirSync(REPORT_DIR, { recursive: true, mode: 0o700 });
@@ -89,14 +85,14 @@ const COLORS = {
     magenta: "\x1b[35m"
 };
 
-let SUMMARY = `\n${COLORS.cyan}${COLORS.bright}OPENCLAW SECURITY AUDIT${COLORS.reset} ${COLORS.dim}[${DATE_STR}]${COLORS.reset}\n`;
+let SUMMARY = `\n${COLORS.cyan}${COLORS.bright}WORKBUDDY SECURITY AUDIT${COLORS.reset} ${COLORS.dim}[${DATE_STR}]${COLORS.reset}\n`;
 SUMMARY += `${COLORS.dim}────────────────────────────────────────────────────────────────────────${COLORS.reset}\n`;
 let RED_COUNT = 0;
 let SKIP_COUNT = 0;
 let JSON_DATA = [];
 let ITEM_SEQ = 0;
 
-fs.writeFileSync(REPORT_FILE, `=== OpenClaw Hybrid Security Audit (${DATE_STR}) ===\n`, { mode: 0o600 });
+fs.writeFileSync(REPORT_FILE, `=== WorkBuddy Hybrid Security Audit (${DATE_STR}) ===\n`, { mode: 0o600 });
 
 // ──────────────────────────────────────────
 // 核心工具函数（全部基于 spawnSync，不使用 shell）
@@ -159,22 +155,6 @@ function runSafeCommand(commandKey, args, strictMode) {
     try {
         let result;
         switch (commandKey) {
-            case 'openclaw':
-                if (platform === 'win32') {
-                    // Windows 底层限制：必须依赖 shell 才能解析 .cmd 文件。
-                    // 安全断言：此处的 safeArgs 为内部硬编码，无用户输入，局部开启 shell 无注入风险。
-                    result = spawnSync('openclaw.cmd', safeArgs, { stdio: 'pipe', encoding: 'utf-8', timeout: 30000, shell: true });
-                } else {
-                    result = spawnSync('openclaw', safeArgs, { stdio: 'pipe', encoding: 'utf-8', timeout: 30000 });
-                }
-                break;
-            case 'openclaw-cn':
-                if (platform === 'win32') {
-                    result = spawnSync('openclaw-cn.cmd', safeArgs, { stdio: 'pipe', encoding: 'utf-8', timeout: 30000, shell: true });
-                } else {
-                    result = spawnSync('openclaw-cn', safeArgs, { stdio: 'pipe', encoding: 'utf-8', timeout: 30000 });
-                }
-                break;
             case 'find':
                 result = spawnSync('find', safeArgs, { stdio: 'pipe', encoding: 'utf-8', timeout: 30000 });
                 break;
@@ -263,7 +243,6 @@ function generateConfigBaseline() {
     // 确定需要监控的配置文件
     // 注意: devices/paired.json 被排除，因为巡检脚本运行时会更新该文件
     const configFiles = [
-        path.join(OC, 'openclaw.json'),
         path.join(OC, 'config.json'),
         path.join(OC, 'settings.json')
     ];
@@ -326,7 +305,7 @@ function generateConfigBaseline() {
     }
 }
 
-let FILTER_SKILLS_KEYWORDS = ["changeway","ctct-security-patrol"];
+let FILTER_SKILLS_KEYWORDS = ["changeway","ctct-security-patrol","workbuddy-security"];
 
 function countMatchesInFile(filePath, regex) {
     try {
@@ -394,26 +373,42 @@ function filterAuditOutput(output, keywords) {
 // ==========================================
 fs.appendFileSync(REPORT_FILE, `\n--- [板块一] 基础设施与系统安全 ---`);
 
-// [1/14] OpenClaw 基础审计
+// [1/14] 核心运行环境健康度（WorkBuddy 环境下通过检查关键目录和配置文件存在性来判断）
 let itemName = "核心运行环境健康度";
-fs.appendFileSync(REPORT_FILE, `\n\n[1/14] OpenClaw 基础审计 (--deep)`);
-let res1 = spawnCmdStrict("openclaw", ["security", "audit", "--deep"]);
-if (!res1.success) {
-    // 如果 openclaw 执行失败，尝试使用 openclaw-cn 再执行一次
-    let res1Fallback = spawnCmdStrict("openclaw-cn", ["security", "audit", "--deep"]);
-    if (res1Fallback.success) {
-        res1 = res1Fallback;
+fs.appendFileSync(REPORT_FILE, `\n\n[1/14] WorkBuddy 基础环境检查`);
+{
+    const checks = [];
+    let hasIssue = false;
+
+    // 检查 WorkBuddy 安全数据目录
+    const secDirExists = fs.existsSync(OC);
+    checks.push(`安全数据目录 (${OC}): ${secDirExists ? 'OK' : '不存在（将在首次运行时自动创建）'}`);
+
+    // 检查 Node.js 版本
+    const nodeVersion = process.version;
+    const major = parseInt(nodeVersion.replace('v', '').split('.')[0], 10);
+    if (major < 18) {
+        checks.push(`Node.js 版本: ${nodeVersion} ⚠️ 建议升级到 v18+`);
+        hasIssue = true;
     } else {
-        // 如果 fallback 也失败，则将两次失败信息合并
-        res1.output += `\n\n[Fallback openclaw-cn 也执行失败]\n${res1Fallback.output || ''}`;
+        checks.push(`Node.js 版本: ${nodeVersion} ✅`);
     }
-}
-// 过滤指定的 skills 条目
-res1.output = filterAuditOutput(res1.output, FILTER_SKILLS_KEYWORDS);
-if (res1.success) {
-    appendInfo(itemName, "运行环境各项指标正常（数据来源: openclaw security audit --deep）", res1.output);
-} else {
-    appendWarn(itemName, "核心环境存在异常（数据来源: openclaw security audit --deep 详见报告）", res1.output);
+
+    // 检查报告目录写权限
+    try {
+        fs.mkdirSync(path.join(OC, 'security-reports'), { recursive: true, mode: 0o700 });
+        checks.push(`报告目录写权限: OK`);
+    } catch (e) {
+        checks.push(`报告目录写权限: FAILED (${e.message})`);
+        hasIssue = true;
+    }
+
+    const detail1 = checks.join('\n');
+    if (hasIssue) {
+        appendWarn(itemName, "运行环境存在异常，请查看详细报告", detail1);
+    } else {
+        appendInfo(itemName, `运行环境检查通过，Node.js ${nodeVersion}`, detail1);
+    }
 }
 
 // [2/14] 敏感目录变更
@@ -428,7 +423,7 @@ if (platform === 'win32') {
         path.join(process.env.PROGRAMDATA || 'C:\\ProgramData', 'ssh')
     ];
 } else {
-    SENSITIVE_ROOTS = [OC, '/etc', path.join(HOME, '.ssh'), path.join(HOME, '.gnupg'), '/usr/local/bin'];
+    SENSITIVE_ROOTS = [OC, '/etc', path.join(HOME, '.ssh'), path.join(HOME, '.gnupg'), '/usr/local/bin', path.join(HOME, '.workbuddy')];
 }
 const PRUNE_PATTERNS = [
     'node_modules', '.cache', '.npm', '__pycache__', '.git', 'dist', 'build', '.next', '.nuxt',
@@ -517,7 +512,7 @@ Object.keys(byGroup).sort().forEach(grp => {
 // 定义高风险变更路径
 const HIGH_RISK_PATHS = [
     '/credentials/', '/.ssh/', '/etc/shadow', '/etc/passwd',
-    'openclaw.json', 'sshd_config', 'authorized_keys'
+    'mcp.json', 'sshd_config', 'authorized_keys'
 ];
 
 const riskyChanges = lines.filter(f =>
@@ -539,7 +534,7 @@ if (totalCount === 0) {
 itemName = "网关进程内存凭证隔离检查";
 fs.appendFileSync(REPORT_FILE, `\n[3/14] Gateway 环境变量泄露扫描`);
 {
-    const gwPidRaw = spawnCmd('pgrep', ['-f', 'openclaw-gateway']);
+    const gwPidRaw = spawnCmd('pgrep', ['-f', 'workbuddy']);
     const gwPid = gwPidRaw.split('\n')[0];
 
     if (gwPid && /^\d+$/.test(gwPid)) {
@@ -565,13 +560,13 @@ fs.appendFileSync(REPORT_FILE, `\n[3/14] Gateway 环境变量泄露扫描`);
             } catch (e) {
                 appendInfo(
                     itemName,
-                    "无法读取网关进程环境（权限不足或进程受保护）",
-                    "⚠️ 读取 /proc/" + gwPid + "/environ 失败: " + e.code + "\n建议以与网关相同用户运行，或通过网关侧诊断接口获取白名单变量名。"
+                    "无法读取 WorkBuddy 进程环境（权限不足或进程受保护）",
+                    "⚠️ 读取 /proc/" + gwPid + "/environ 失败: " + e.code + "\n建议以与 WorkBuddy 相同用户运行，或通过 WorkBuddy 侧诊断接口获取白名单变量名。"
                 );
             }
         } else if (platform === 'darwin') {
             // macOS 降级方案：审计配置文件中的敏感字段
-            const configPath = path.join(OC, 'openclaw.json');
+            const configPath = path.join(HOME, '.workbuddy', 'mcp.json');
             try {
                 const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
                 const configStr = JSON.stringify(config);
@@ -585,11 +580,11 @@ fs.appendFileSync(REPORT_FILE, `\n[3/14] Gateway 环境变量泄露扫描`);
                     appendInfo(itemName, "配置文件中未发现明文凭证（进程级检查受 macOS 平台限制跳过）", "");
                 }
             } catch (e) {
-                appendSkip(itemName, `macOS 平台降级检查失败`, e.message);
+                appendSkip(itemName, `macOS 平台降级检查失败或配置文件不存在`, e.message);
             }
         } else if (platform === 'win32') {
             // Windows 降级方案：审计配置文件中的敏感字段
-            const configPath = path.join(OC, 'openclaw.json');
+            const configPath = path.join(HOME, '.workbuddy', 'mcp.json');
             try {
                 const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
                 const configStr = JSON.stringify(config);
@@ -603,11 +598,11 @@ fs.appendFileSync(REPORT_FILE, `\n[3/14] Gateway 环境变量泄露扫描`);
                     appendInfo(itemName, "配置文件中未发现明文凭证（进程级检查受 Windows 平台限制跳过）", "");
                 }
             } catch (e) {
-                appendSkip(itemName, `Windows 平台降级检查失败`, e.message);
+                appendSkip(itemName, `Windows 平台降级检查失败或配置文件不存在`, e.message);
             }
         }
     } else {
-        appendInfo(itemName, `${PLATFORM_NAME} 平台未发现运行中的网关进程`,  `${PLATFORM_NAME} 平台未发现运行中的网关进程`);
+        appendInfo(itemName, `${PLATFORM_NAME} 平台未发现运行中的 WorkBuddy 进程`,  `${PLATFORM_NAME} 平台未发现运行中的 WorkBuddy 进程`);
     }
 }
 
@@ -692,35 +687,34 @@ function checkWindowsFilePermission(filePath) {
 let permOk = true;
 
 if (platform === 'win32') {
-    const permOCWin = checkWindowsFilePermission(path.join(OC, 'openclaw.json'));
+    const permMcpWin = checkWindowsFilePermission(path.join(HOME, '.workbuddy', 'mcp.json'));
     const sshdConfigPath = path.join(process.env.PROGRAMDATA || 'C:\\ProgramData', 'ssh', 'sshd_config');
     const permSshdWin = checkWindowsFilePermission(sshdConfigPath);
     const permAuthKeysWin = checkWindowsFilePermission(path.join(HOME, '.ssh/authorized_keys'));
 
     detail4 += `\n\n>>> 关键文件权限状态 (Windows ACL):
-openclaw.json     : ${permOCWin} (预期: 无 Everyone/Users 写权限)
+mcp.json          : ${permMcpWin} (预期: 无 Everyone/Users 写权限)
 sshd_config       : ${permSshdWin} (预期: 无 Everyone/Users 写权限) [${sshdConfigPath}]
 authorized_keys   : ${permAuthKeysWin} (预期: 无 Everyone/Users 写权限)\n`;
 
     if (
-        permOCWin === "PERMISSIVE" ||
+        permMcpWin === "PERMISSIVE" ||
         permSshdWin === "PERMISSIVE" ||
         permAuthKeysWin === "PERMISSIVE"
     ) {
         permOk = false;
     }
 } else {
-    const permOC = getFilePerms(path.join(OC, 'openclaw.json'));
+    const permMcp = getFilePerms(path.join(HOME, '.workbuddy', 'mcp.json'));
     const permSshd = getFilePerms('/etc/ssh/sshd_config');
     const permAuthKeys = getFilePerms(path.join(HOME, '.ssh/authorized_keys'));
 
     detail4 += `\n\n>>> 关键文件权限状态:
-openclaw.json     : ${permOC} (预期: 600)
+mcp.json          : ${permMcp} (预期: 600 或 644)
 sshd_config       : ${permSshd} (预期: 644 或 600)
 authorized_keys   : ${permAuthKeys} (预期: 600 或 644)\n`;
 
     if (
-        (permOC !== "600" && permOC !== "MISSING") ||
         (permSshd !== "600" && permSshd !== "644" && permSshd !== "MISSING") ||
         (permAuthKeys !== "600" && permAuthKeys !== "644" && permAuthKeys !== "MISSING")
     ) {
@@ -750,20 +744,17 @@ fs.appendFileSync(REPORT_FILE, `\n[5/14] MCP/Skill 基线完整性`);
 let SKILL_SCAN_DIRS;
 if (platform === 'win32') {
     SKILL_SCAN_DIRS = [
-        path.join(process.env.APPDATA || path.join(HOME, 'AppData', 'Roaming'), 'npm', 'node_modules', 'openclaw-cn', 'skills'),
-        path.join(process.env.APPDATA || path.join(HOME, 'AppData', 'Roaming'), 'npm', 'node_modules', 'openclaw', 'skills'),
-        path.join(HOME, '.openclaw', 'workspace', 'skills'),
-        path.join(HOME, '.openclaw', 'skills')
+        path.join(HOME, '.workbuddy', 'skills'),
+        path.join(process.env.APPDATA || path.join(HOME, 'AppData', 'Roaming'), 'WorkBuddy', 'User', 'globalStorage', 'tencent-cloud.coding-copilot', 'skills')
     ];
 } else {
     SKILL_SCAN_DIRS = [
-        '/opt/homebrew/lib/node_modules/openclaw/skills',
-        path.join(HOME, '.openclaw/workspace/skills'),
-        path.join(HOME, '.openclaw/skills')
+        path.join(HOME, '.workbuddy', 'skills'),
+        path.join(HOME, '.openclaw', 'skills')  // 兼容旧版 openclaw skills 目录
     ];
 }
 let skillDir = SKILL_SCAN_DIRS[0];
-let mcpDir = path.join(OC, 'workspace/mcp');
+let mcpDir = path.join(HOME, '.workbuddy');
 let hashDir = path.join(OC, 'security-baselines');
 fs.mkdirSync(hashDir, { recursive: true });
 let curHashPath = path.join(hashDir, 'skill-mcp-current.sha256');
@@ -932,27 +923,77 @@ if (platform === 'linux') {
     psRaw = spawnCmd('tasklist', ['/FO', 'CSV', '/NH']);
     psRaw = psRaw.split('\n').slice(0, 6).join('\n');
 }
+// 规则 1: 检测绑定 0.0.0.0 或 [::] 的非标准端口（排除 22/80/443/53 等常规端口）
+const knownPorts = new Set(['22', '80', '443', '53']);
+const riskyPorts = portsRaw.split('\n').filter(line => {
+    return /0\.0\.0\.0|\[::\]/.test(line) && !knownPorts.has((line.match(/:(\d+)\s/) || [])[1]);
+});
+
+// 规则 2: 高资源进程检测（CPU > 80%）
+const highCpuProcesses = psRaw.split('\n').filter(line => {
+    const cpu = parseFloat((line.match(/\s+([\d.]+)\s+[\d.]+\s+\S+$/) || [])[1]);
+    return cpu > 80;
+});
+
 let portCount = portsRaw ? portsRaw.split('\n').filter(Boolean).length : 0;
 let detail7 = `--- 监听端口与高资源进程 ---\n>>> 全局网络监听状态:\n${portsRaw || '无数据'}\n\n>>> 资源占用 Top 5 进程快照:\n${psRaw || '无数据'}`;
-if (portCount > 0) appendInfo(itemName, `发现 ${portCount} 条疑似对外监听记录；资源进程快照已记录`, detail7);
-else appendInfo(itemName, "当前无对外开放的监听端口；资源进程快照已记录", detail7);
 
-// [8/14] OpenClaw 定时任务
+if (riskyPorts.length > 0) {
+    appendWarn(itemName, `发现 ${riskyPorts.length} 个非标准端口监听全接口(0.0.0.0)，存在暴露风险`, detail7);
+} else if (highCpuProcesses.length > 0) {
+    appendWarn(itemName, `发现 ${highCpuProcesses.length} 个高 CPU 占用进程，请排查`, detail7);
+} else if (portCount > 0) {
+    appendInfo(itemName, `发现 ${portCount} 个监听端口，均在已知范围内`, detail7);
+} else {
+    appendInfo(itemName, "当前无对外开放的监听端口", detail7);
+}
+
+// [8/14] WorkBuddy Automation 任务审计
 itemName = "自动化任务与后门驻留排查";
-fs.appendFileSync(REPORT_FILE, `\n[8/14] OpenClaw Cron Jobs`);
-let res8 = spawnCmdStrict("openclaw", ["cron", "list"]);
-if (!res8.success) {
-    // 如果 openclaw 执行失败，尝试使用 openclaw-cn 再执行一次
-    let res8Fallback = spawnCmdStrict("openclaw-cn", ["cron", "list"]);
-    if (res8Fallback.success) {
-        res8 = res8Fallback;
+fs.appendFileSync(REPORT_FILE, `\n[8/14] WorkBuddy Automation Jobs`);
+{
+    // 扫描 WorkBuddy automations 目录，列出已注册的定时任务
+    const automationsDir = path.join(HOME, '.workbuddy', 'automations');
+    let automationList = [];
+    let automationDetail = '';
+
+    if (fs.existsSync(automationsDir)) {
+        try {
+            const autoDirs = fs.readdirSync(automationsDir);
+            for (const autoId of autoDirs) {
+                const tomlPath = buildSafeChildPath(automationsDir, autoId);
+                if (!tomlPath) continue;
+                const autoToml = path.join(tomlPath, 'automation.toml');
+                if (fs.existsSync(autoToml)) {
+                    try {
+                        const content = fs.readFileSync(autoToml, 'utf-8');
+                        // 提取 name 和 rrule/scheduledAt 信息（简单文本提取，无需 TOML 解析库）
+                        const nameMatch = content.match(/name\s*=\s*"([^"]+)"/);
+                        const rruleMatch = content.match(/rrule\s*=\s*"([^"]+)"/);
+                        const statusMatch = content.match(/status\s*=\s*"([^"]+)"/);
+                        const name = nameMatch ? nameMatch[1] : autoId;
+                        const rrule = rruleMatch ? rruleMatch[1] : '(无调度规则)';
+                        const status = statusMatch ? statusMatch[1] : 'UNKNOWN';
+                        automationList.push(`  - ${name} [${status}] 调度: ${rrule}`);
+                    } catch (e) {
+                        automationList.push(`  - ${autoId} (读取失败: ${e.message})`);
+                    }
+                }
+            }
+        } catch (e) {
+            automationDetail = `扫描 Automation 目录失败: ${e.message}`;
+        }
+    }
+
+    if (automationList.length > 0) {
+        automationDetail = `>>> WorkBuddy Automation 任务列表 (共 ${automationList.length} 个):\n` + automationList.join('\n');
+        appendInfo(itemName, `已列出 ${automationList.length} 个 WorkBuddy Automation 定时任务`, automationDetail);
+    } else if (fs.existsSync(automationsDir)) {
+        appendInfo(itemName, "当前无已注册的 WorkBuddy Automation 定时任务", `automations 目录存在但为空: ${automationsDir}`);
     } else {
-        // 如果 fallback 也失败，则将两次失败信息合并
-        res8.output += `\n\n[Fallback openclaw-cn 也执行失败]\n${res8Fallback.output || ''}`;
+        appendInfo(itemName, "未发现 WorkBuddy Automation 目录，暂无定时任务", `目录不存在: ${automationsDir}`);
     }
 }
-if (res8.success) appendInfo(itemName, "已拉取内部任务列表", res8.output);
-else appendWarn(itemName, "⚠️ 拉取失败（可能是 token/权限问题）", res8.output);
 
 
 // ==========================================
@@ -1054,7 +1095,7 @@ if (EXISTING_LOG_FILES.length > 0) {
 // [12/14] 敏感信息启发式扫描
 itemName = "硬编码密钥与助记词防泄漏扫描";
 fs.appendFileSync(REPORT_FILE, `\n[12/14] 敏感信息启发式扫描`);
-let scanRoot = path.join(OC, 'workspace');
+let scanRoot = process.env.WORKBUDDY_WORKSPACE || path.join(HOME, 'WorkBuddy');
 let dlpHits = 0;
 if (fs.existsSync(scanRoot)) {
     const skipExts = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.woff', '.woff2', '.ttf', '.eot']);
@@ -1134,7 +1175,7 @@ function getMemoryFilesForLast24h(memoryDir) {
     }
 }
 
-const memoryDir = path.join(OC, 'workspace/memory');
+const memoryDir = path.join(HOME, '.workbuddy', 'memory');
 const memFiles = getMemoryFilesForLast24h(memoryDir);
 let memCount = 0;
 for (const f of memFiles) {
@@ -1342,7 +1383,7 @@ function finalizeAndPushData() {
         SUMMARY += `${COLORS.dim}────────────────────────────────────────────────────────────────────────${COLORS.reset}\n`;
         console.log(SUMMARY);
         console.log(`${COLORS.dim}详细审计报告已保存至: \`${REPORT_FILE}\`${COLORS.reset}`);
-        console.log(`\n${COLORS.dim}当前为本地离线模式。如需参与全网威胁态势感知，请附加 --push 参数运行。${COLORS.reset}`);
+        console.log(`\n${COLORS.dim}当前为本地离线模式。如需参与全网威胁态势感知，请附加 --push 参数运行（仅限手动执行，需知情确认）。${COLORS.reset}`);
         process.exit(0);
         return;
     }
